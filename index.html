@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Game with Randomized Colors</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            display: flex;
+            align-items: flex-start;
+        }
+        #scoreContainer {
+            margin-right: 20px;
+            padding-right: 10px;
+            border-right: 2px solid #333;
+            padding-top: 10px;
+        }
+        #scoreContainer h2 {
+            font-size: 20px;
+            margin: 0 0 10px;
+            color: #333;
+        }
+        #gameBoard {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .scoreBox {
+            margin-bottom: 15px;
+        }
+        .scoreBox span {
+            display: block;
+            font-size: 18px;
+        }
+        #scoreHistory {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 8px;
+            background-color: #fff;
+        }
+        .attemptScore {
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        #autoplayButton {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #autoplayButton.active {
+            background-color: #d9534f;
+        }
+        .scoreItem {
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #e0e0e0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="scoreContainer">
+            <h2>Score Info</h2>
+            <div id="currentScore" class="scoreItem">Score: 0</div>
+            <div id="highScore" class="scoreItem">High Score: 0</div>
+            <div id="totalScore" class="scoreItem">Total Score: 0</div>
+            <div id="scoreHistory" class="scoreBox">
+                <h2>Recent Scores</h2>
+                <!-- Scores will be populated here -->
+            </div>
+        </div>
+        <div id="gameBoard">
+            <canvas id="gameCanvas" width="400" height="400"></canvas>
+            <button id="autoplayButton">Start Autoplay</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const currentScoreElement = document.getElementById('currentScore');
+        const highScoreElement = document.getElementById('highScore');
+        const totalScoreElement = document.getElementById('totalScore');
+        const scoreHistoryElement = document.getElementById('scoreHistory');
+        const autoplayButton = document.getElementById('autoplayButton');
+
+        const gridSize = 20;
+        const tileCount = canvas.width / gridSize;
+
+        let snake = [{x: 10, y: 10}];
+        let food = {x: 15, y: 15};
+        let dx = 0;
+        let dy = 0;
+        let score = 0;
+        let highScore = 0;
+        let totalScore = 0;
+        let scoreHistory = [];
+        let isAutoplay = false;
+
+        const maxHistoryDisplay = 10;
+
+        // Colors
+        let snakeColor = getRandomColor();
+        let snakeHeadColor = getRandomColor(snakeColor);
+        let foodColor = getRandomColor(snakeColor);
+        
+        // Load scores from local storage
+        function loadScores() {
+            highScore = parseInt(localStorage.getItem('snakeHighScore')) || 0;
+            totalScore = parseInt(localStorage.getItem('snakeTotalScore')) || 0;
+            scoreHistory = JSON.parse(localStorage.getItem('snakeScoreHistory')) || [];
+            updateScoreDisplay();
+            updateScoreHistory();
+        }
+
+        // Save scores to local storage
+        function saveScores() {
+            localStorage.setItem('snakeHighScore', highScore);
+            localStorage.setItem('snakeTotalScore', totalScore);
+            localStorage.setItem('snakeScoreHistory', JSON.stringify(scoreHistory));
+        }
+
+        function drawGame() {
+            clearCanvas();
+            if (isAutoplay) {
+                autoplayMove();
+            }
+            moveSnake();
+            drawSnake();
+            drawFood();
+            checkCollision();
+            updateScoreDisplay();
+        }
+
+        function clearCanvas() {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function moveSnake() {
+            const head = {x: snake[0].x + dx, y: snake[0].y + dy};
+            
+            // Implement wraparound
+            head.x = (head.x + tileCount) % tileCount;
+            head.y = (head.y + tileCount) % tileCount;
+
+            snake.unshift(head);
+
+            if (head.x === food.x && head.y === food.y) {
+                score++;
+                generateFood();
+            } else {
+                snake.pop();
+            }
+        }
+
+        function drawSnake() {
+            ctx.fillStyle = snakeHeadColor;
+            ctx.fillRect(snake[0].x * gridSize, snake[0].y * gridSize, gridSize - 2, gridSize - 2);
+
+            ctx.fillStyle = snakeColor;
+            for (let i = 1; i < snake.length; i++) {
+                ctx.fillRect(snake[i].x * gridSize, snake[i].y * gridSize, gridSize - 2, gridSize - 2);
+            }
+        }
+
+        function drawFood() {
+            ctx.fillStyle = foodColor;
+            ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize - 2, gridSize - 2);
+        }
+
+        function generateFood() {
+            do {
+                food.x = Math.floor(Math.random() * tileCount);
+                food.y = Math.floor(Math.random() * tileCount);
+            } while (snake.some(segment => segment.x === food.x && segment.y === food.y));
+
+            // Ensure new food color is distinct from the snake's body
+            foodColor = getRandomColor(snakeColor);
+        }
+
+        function checkCollision() {
+            const head = snake[0];
+
+            // Check collision with self
+            for (let i = 1; i < snake.length; i++) {
+                if (head.x === snake[i].x && head.y === snake[i].y) {
+                    endGame();
+                    return;
+                }
+            }
+        }
+
+        function endGame() {
+            // Update high score if needed
+            if (score > highScore) {
+                highScore = score;
+            }
+            // Update total score
+            totalScore += score;
+
+            // Add to score history and limit to 10 attempts
+            scoreHistory.push(score);
+            if (scoreHistory.length > 10) {
+                scoreHistory.shift();
+            }
+
+            // Save scores to local storage
+            saveScores();
+            updateScoreHistory();
+
+            // Reset game
+            resetGame();
+        }
+
+        function resetGame() {
+            snake = [{x: 10, y: 10}];
+            food = {x: 15, y: 15};
+            dx = 0;
+            dy = 0;
+            score = 0;
+            isAutoplay = false;
+
+            // Randomize snake and food colors
+            snakeColor = getRandomColor();
+            snakeHeadColor = getRandomColor(snakeColor);
+            foodColor = getRandomColor(snakeColor);
+
+            updateScoreDisplay();
+            updateAutoplayButton();
+        }
+
+        function updateScoreDisplay() {
+            currentScoreElement.innerHTML = `Score: ${score}`;
+            highScoreElement.innerHTML = `High Score: ${highScore}`;
+            totalScoreElement.innerHTML = `Total Score: ${totalScore}`;
+        }
+
+        function updateScoreHistory() {
+            scoreHistoryElement.innerHTML = "<h2>Recent Scores</h2>";
+            scoreHistory.slice(-maxHistoryDisplay).forEach((attemptScore, index) => {
+                scoreHistoryElement.innerHTML += `<div class="attemptScore">Attempt ${index + 1}: ${attemptScore}</div>`;
+            });
+        }
+
+        function changeDirection(event) {
+            if (isAutoplay) return;
+
+            const LEFT_KEY = 37;
+            const RIGHT_KEY = 39;
+            const UP_KEY = 38;
+            const DOWN_KEY = 40;
+
+            const keyPressed = event.keyCode;
+
+            const goingUp = dy === -1;
+            const goingDown = dy === 1;
+            const goingRight = dx === 1;
+            const goingLeft = dx === -1;
+
+            if (keyPressed === LEFT_KEY && !goingRight) {
+                dx = -1;
+                dy = 0;
+            }
+
+            if (keyPressed === UP_KEY && !goingDown) {
+                dx = 0;
+                dy = -1;
+            }
+
+            if (keyPressed === RIGHT_KEY && !goingLeft) {
+                dx = 1;
+                dy = 0;
+            }
+
+            if (keyPressed === DOWN_KEY && !goingUp) {
+                dx = 0;
+                dy = 1;
+            }
+        }
+
+        function toggleAutoplay() {
+            isAutoplay = !isAutoplay;
+            updateAutoplayButton();
+        }
+
+        function updateAutoplayButton() {
+            autoplayButton.textContent = isAutoplay ? 'Stop Autoplay' : 'Start Autoplay';
+            autoplayButton.classList.toggle('active', isAutoplay);
+        }
+
+        function autoplayMove() {
+            const path = findPath(snake[0], food);
+            if (path.length > 1) {
+                const nextMove = path[1];
+                dx = nextMove.x - snake[0].x;
+                dy = nextMove.y - snake[0].y;
+
+                // Handle wraparound
+                if (dx > 1) dx = -1;
+                if (dx < -1) dx = 1;
+                if (dy > 1) dy = -1;
+                if (dy < -1) dy = 1;
+            }
+        }
+
+        function getRandomColor(excludeColor) {
+            const colors = ['#FF5733', '#33FF57', '#3357FF', '#FF33A8', '#A833FF', '#33FFF8', '#FF9633'];
+            let color;
+            do {
+                color = colors[Math.floor(Math.random() * colors.length)];
+            } while (color === excludeColor);
+            return color;
+        }
+
+        // A* Pathfinding logic to guide the snake in autoplay mode
+        function findPath(start, goal) {
+            const openSet = [start];
+            const cameFrom = new Map();
+            const gScore = new Map();
+            const fScore = new Map();
+
+            gScore.set(JSON.stringify(start), 0);
+            fScore.set(JSON.stringify(start), heuristic(start, goal));
+
+            while (openSet.length > 0) {
+                const current = openSet.reduce((a, b) => 
+                    fScore.get(JSON.stringify(a)) < fScore.get(JSON.stringify(b)) ? a : b
+                );
+
+                if (current.x === goal.x && current.y === goal.y) {
+                    return reconstructPath(cameFrom, current);
+                }
+
+                openSet.splice(openSet.indexOf(current), 1);
+
+                const neighbors = getNeighbors(current);
+                for (const neighbor of neighbors) {
+                    const tentativeGScore = gScore.get(JSON.stringify(current)) + 1;
+                    
+                    if (!gScore.has(JSON.stringify(neighbor)) || tentativeGScore < gScore.get(JSON.stringify(neighbor))) {
+                        cameFrom.set(JSON.stringify(neighbor), current);
+                        gScore.set(JSON.stringify(neighbor), tentativeGScore);
+                        fScore.set(JSON.stringify(neighbor), tentativeGScore + heuristic(neighbor, goal));
+                        
+                        if (!openSet.some(pos => pos.x === neighbor.x && pos.y === neighbor.y)) {
+                            openSet.push(neighbor);
+                        }
+                    }
+                }
+            }
+
+            // No path found
+            return [start];
+        }
+
+        function reconstructPath(cameFrom, current) {
+            const path = [current];
+            while (cameFrom.has(JSON.stringify(current))) {
+                current = cameFrom.get(JSON.stringify(current));
+                path.unshift(current);
+            }
+            return path;
+        }
+
+        function getNeighbors(pos) {
+            const directions = [
+                {dx: -1, dy: 0},
+                {dx: 1, dy: 0},
+                {dx: 0, dy: -1},
+                {dx: 0, dy: 1}
+            ];
+
+            return directions.map(dir => ({
+                x: (pos.x + dir.dx + tileCount) % tileCount,
+                y: (pos.y + dir.dy + tileCount) % tileCount
+            })).filter(newPos => !isCollision(newPos));
+        }
+
+        function isCollision(pos) {
+            return snake.some((segment, index) => 
+                index !== snake.length - 1 && segment.x === pos.x && segment.y === pos.y
+            );
+        }
+
+        function heuristic(a, b) {
+            return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+        }
+
+        document.addEventListener('keydown', changeDirection);
+        autoplayButton.addEventListener('click', toggleAutoplay);
+
+        // Load scores and start the game
+        loadScores();
+        setInterval(drawGame, 100);
+    </script>
+</body>
+</html>
